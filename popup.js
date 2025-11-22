@@ -199,7 +199,9 @@ async function realizarBusqueda() {
         query: query,
         urls: urls,
         newWindow: openInNewWindow,
-        fuentesInfo: obtenerInfoFuentes(fuentesSeleccionadas)
+        fuentesInfo: obtenerInfoFuentes(fuentesSeleccionadas),
+        maxPages: paginasPorFuente,
+        paginationConfig: obtenerConfigPaginacion(fuentesSeleccionadas)
       });
 
       if (response && response.success) {
@@ -239,7 +241,7 @@ async function realizarBusqueda() {
 }
 
 /**
- * Construir URLs con paginación
+ * Construir URLs (solo página 1, el content script manejará paginación)
  */
 function construirURLsConPaginacion(fuentesSeleccionadas, query, paginas) {
   const urls = [];
@@ -251,34 +253,10 @@ function construirURLsConPaginacion(fuentesSeleccionadas, query, paginas) {
       return;
     }
 
-    // Para cada fuente, generar URLs para cada página
-    for (let pagina = 1; pagina <= paginas; pagina++) {
-      let url;
-
-      if (pagina === 1) {
-        // Primera página: usar URL base
-        url = source.url.replace('{query}', encodeURIComponent(query));
-      } else {
-        // Páginas siguientes: usar template de paginación
-        const pagination = source.pagination;
-        if (!pagination) continue;
-
-        url = pagination.urlTemplate.replace('{query}', encodeURIComponent(query));
-
-        // Reemplazar parámetro de paginación según el tipo
-        if (pagination.type === 'page') {
-          url = url.replace('{page}', pagina);
-        } else if (pagination.type === 'start') {
-          const start = ((pagina - 1) * pagination.resultsPerPage) + 1;
-          url = url.replace('{start}', start);
-        } else if (pagination.type === 'offset') {
-          const offset = (pagina - 1) * pagination.resultsPerPage;
-          url = url.replace('{offset}', offset);
-        }
-      }
-
-      urls.push(url);
-    }
+    // Solo generar URL de la página 1
+    // El content script se encargará de navegar a las siguientes páginas
+    const url = source.url.replace('{query}', encodeURIComponent(query));
+    urls.push(url);
   });
 
   return urls;
@@ -292,6 +270,20 @@ function obtenerInfoFuentes(fuentesSeleccionadas) {
     id: sourceId,
     name: SOURCES[sourceId]?.name || sourceId
   }));
+}
+
+/**
+ * Obtener configuración de paginación por fuente
+ */
+function obtenerConfigPaginacion(fuentesSeleccionadas) {
+  const config = {};
+  fuentesSeleccionadas.forEach(sourceId => {
+    const source = SOURCES[sourceId];
+    if (source && source.pagination) {
+      config[sourceId] = source.pagination;
+    }
+  });
+  return config;
 }
 
 /**

@@ -40,7 +40,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'searchWithScraping') {
-    buscarConScraping(request.query, request.urls, request.newWindow, request.fuentesInfo)
+    buscarConScraping(
+      request.query,
+      request.urls,
+      request.newWindow,
+      request.fuentesInfo,
+      request.maxPages,
+      request.paginationConfig
+    )
       .then(resultado => sendResponse(resultado))
       .catch(error => sendResponse({ success: false, error: error.message }));
 
@@ -67,8 +74,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 /**
  * Búsqueda con scraping (v2.0)
  */
-async function buscarConScraping(query, urls, newWindow = false, fuentesInfo = []) {
-  console.log(`🚀 Iniciando búsqueda con scraping: "${query}"`);
+async function buscarConScraping(query, urls, newWindow = false, fuentesInfo = [], maxPages = 1, paginationConfig = {}) {
+  console.log(`🚀 Iniciando búsqueda con scraping: "${query}" (${maxPages} páginas por fuente)`);
 
   // Inicializar estado
   scrapingState = {
@@ -79,7 +86,10 @@ async function buscarConScraping(query, urls, newWindow = false, fuentesInfo = [
     resultados: [],
     errores: [],
     inicioTimestamp: Date.now(),
-    tabsIds: []
+    tabsIds: [],
+    maxPages: maxPages,
+    paginationConfig: paginationConfig,
+    fuentesInfo: fuentesInfo
   };
 
   try {
