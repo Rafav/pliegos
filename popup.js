@@ -313,36 +313,52 @@ function obtenerConfigPaginacion(fuentesSeleccionadas) {
 }
 
 /**
- * Escuchar progreso del scraping
+ * Escuchar progreso del scraping (mejorado con logs)
  */
 function escucharProgresoScraping() {
-  // Polling cada segundo para ver el progreso
+  console.log('🎧 Iniciando escucha de scraping...');
+
+  let ultimoTimestamp = 0;
+  let checksRealizados = 0;
+  const maxChecks = 90; // 90 segundos máximo
+
   const interval = setInterval(async () => {
+    checksRealizados++;
+
     try {
       const data = await chrome.storage.local.get(['ultimoScraping']);
 
       if (data.ultimoScraping) {
         const scraping = data.ultimoScraping;
 
-        // Verificar si es de la búsqueda actual
-        const tiempoTranscurrido = Date.now() - scraping.timestamp;
-        if (tiempoTranscurrido < 5000) { // Menos de 5 segundos
+        // Si es un resultado nuevo (timestamp diferente al último)
+        if (scraping.timestamp > ultimoTimestamp) {
+          console.log('✅ Nuevo resultado detectado!');
+          ultimoTimestamp = scraping.timestamp;
+
           // Mostrar resumen
           mostrarResumenScraping(scraping);
           searchBtn.disabled = false;
           clearInterval(interval);
+        } else if (checksRealizados % 5 === 0) {
+          // Log cada 5 segundos
+          console.log(`⏳ Esperando resultado... (${checksRealizados}s)`);
         }
+      } else if (checksRealizados % 5 === 0) {
+        console.log(`⏳ Sin datos aún... (${checksRealizados}s)`);
       }
+
     } catch (error) {
-      console.error('Error al obtener progreso:', error);
+      console.error('❌ Error:', error);
+    }
+
+    if (checksRealizados >= maxChecks) {
+      console.warn('⏱️ Timeout alcanzado');
+      mostrarEstado('⏱️ Revisa la notificación o las pestañas abiertas', 'error');
+      searchBtn.disabled = false;
+      clearInterval(interval);
     }
   }, 1000);
-
-  // Timeout de 60 segundos
-  setTimeout(() => {
-    clearInterval(interval);
-    searchBtn.disabled = false;
-  }, 60000);
 }
 
 /**
