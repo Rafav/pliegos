@@ -40,6 +40,11 @@
   }
 
   function iniciar() {
+    // Desenrollando necesita más tiempo para renderizar Web Components
+    const delay = sourceId === 'cordel' ? 6000 : 3000;
+
+    console.log(`Esperando ${delay}ms para scraping...`);
+
     setTimeout(() => {
       try {
         let resultados;
@@ -59,7 +64,7 @@
         console.error('Error:', error);
         enviarError(error);
       }
-    }, 3000);
+    }, delay);
   }
 
   function enviarResultados(resultados) {
@@ -194,41 +199,25 @@
 
   function scrapearDesenrollando() {
     console.log('Scraping Desenrollando con estrategia específica (Shadow DOM)');
+    console.log('URL actual:', window.location.href);
 
     const resultados = [];
+
+    // Log de elementos en la página
+    console.log('Elementos pb-* encontrados:', document.querySelectorAll('[class*="pb-"], [id*="pb-"]').length);
+    console.log('Elementos <pb-page>:', document.querySelectorAll('pb-page').length);
+    console.log('Elementos <pb-results>:', document.querySelectorAll('pb-results').length);
+    console.log('Elementos <pb-load>:', document.querySelectorAll('pb-load').length);
 
     // Estrategia 1: Intentar acceder al Shadow DOM de pb-page
     try {
       const pbPage = document.querySelector('pb-page');
-      if (pbPage && pbPage.shadowRoot) {
-        console.log('Shadow DOM encontrado en pb-page');
-        const shadowLinks = pbPage.shadowRoot.querySelectorAll('a[href]');
-        console.log('Links en Shadow DOM:', shadowLinks.length);
-
-        shadowLinks.forEach((link, i) => {
-          const texto = link.textContent.trim();
-          if (texto && texto.length > 10) {
-            resultados.push({
-              id: 'cordel_' + Date.now() + '_' + i,
-              titulo: texto.substring(0, 200),
-              url: link.href,
-              fuente: nombreFuente
-            });
-          }
-        });
-      }
-    } catch (e) {
-      console.warn('Error accediendo a Shadow DOM pb-page:', e);
-    }
-
-    // Estrategia 2: Buscar pb-results o pb-load
-    if (resultados.length === 0) {
-      try {
-        const pbResults = document.querySelector('pb-results, pb-load');
-        if (pbResults && pbResults.shadowRoot) {
-          console.log('Shadow DOM encontrado en pb-results/pb-load');
-          const shadowLinks = pbResults.shadowRoot.querySelectorAll('a[href]');
-          console.log('Links encontrados:', shadowLinks.length);
+      console.log('pb-page encontrado:', !!pbPage);
+      if (pbPage) {
+        console.log('pb-page tiene shadowRoot:', !!pbPage.shadowRoot);
+        if (pbPage.shadowRoot) {
+          const shadowLinks = pbPage.shadowRoot.querySelectorAll('a[href]');
+          console.log('Links en pb-page shadowRoot:', shadowLinks.length);
 
           shadowLinks.forEach((link, i) => {
             const texto = link.textContent.trim();
@@ -242,8 +231,39 @@
             }
           });
         }
+      }
+    } catch (e) {
+      console.error('Error accediendo a Shadow DOM pb-page:', e);
+    }
+
+    // Estrategia 2: Buscar pb-results o pb-load
+    if (resultados.length === 0) {
+      try {
+        const selectors = ['pb-results', 'pb-load', 'pb-view', 'pb-document'];
+        for (const sel of selectors) {
+          const el = document.querySelector(sel);
+          if (el && el.shadowRoot) {
+            console.log(`Shadow DOM encontrado en ${sel}`);
+            const shadowLinks = el.shadowRoot.querySelectorAll('a[href]');
+            console.log(`Links en ${sel}:`, shadowLinks.length);
+
+            shadowLinks.forEach((link, i) => {
+              const texto = link.textContent.trim();
+              if (texto && texto.length > 10) {
+                resultados.push({
+                  id: 'cordel_' + Date.now() + '_' + i,
+                  titulo: texto.substring(0, 200),
+                  url: link.href,
+                  fuente: nombreFuente
+                });
+              }
+            });
+
+            if (resultados.length > 0) break;
+          }
+        }
       } catch (e) {
-        console.warn('Error accediendo a Shadow DOM pb-results:', e);
+        console.error('Error en estrategia 2:', e);
       }
     }
 
@@ -251,14 +271,16 @@
     if (resultados.length === 0) {
       try {
         const allElements = document.querySelectorAll('*');
-        console.log('Buscando Shadow DOM en todos los elementos...');
+        console.log('Total de elementos en página:', allElements.length);
 
+        let elementosConShadow = 0;
         for (const el of allElements) {
           if (el.shadowRoot) {
-            console.log('Shadow DOM encontrado en:', el.tagName);
+            elementosConShadow++;
+            console.log(`Shadow DOM #${elementosConShadow} en:`, el.tagName, el.className || '');
             const links = el.shadowRoot.querySelectorAll('a[href]');
             if (links.length > 0) {
-              console.log('Links encontrados en', el.tagName, ':', links.length);
+              console.log(`  → ${links.length} links encontrados`);
               links.forEach((link, i) => {
                 const texto = link.textContent.trim();
                 if (texto && texto.length > 10) {
@@ -274,14 +296,43 @@
             }
           }
         }
+        console.log('Total de elementos con shadowRoot:', elementosConShadow);
       } catch (e) {
-        console.warn('Error buscando Shadow DOM:', e);
+        console.error('Error en estrategia 3:', e);
       }
     }
 
-    // Estrategia 4: Fallback - buscar en el DOM normal
+    // Estrategia 4: Buscar links en DOM normal (sin shadow)
     if (resultados.length === 0) {
-      console.log('Intentando scraping genérico como fallback...');
+      console.log('Buscando links en DOM normal...');
+      const links = document.querySelectorAll('a[href]');
+      console.log('Total de links en DOM normal:', links.length);
+
+      // Filtrar links que parezcan resultados
+      const linksValidos = Array.from(links).filter(link => {
+        const href = link.href;
+        const texto = link.textContent.trim();
+        // Links de Desenrollando tienen este patrón
+        return (href.includes('desenrollandoelcordel.unige.ch') &&
+                texto.length > 10 &&
+                !href.includes('search.html'));
+      });
+
+      console.log('Links válidos encontrados:', linksValidos.length);
+
+      linksValidos.forEach((link, i) => {
+        resultados.push({
+          id: 'cordel_' + Date.now() + '_' + i,
+          titulo: link.textContent.trim().substring(0, 200),
+          url: link.href,
+          fuente: nombreFuente
+        });
+      });
+    }
+
+    // Estrategia 5: Fallback - scraping genérico
+    if (resultados.length === 0) {
+      console.log('Intentando scraping genérico como último recurso...');
       return scrapearGenerico();
     }
 

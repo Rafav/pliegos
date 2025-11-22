@@ -326,9 +326,15 @@ function mostrarNotificacion(totalResultados, exitosas, fallidas) {
 /**
  * Click en notificación → Abrir popup con resultados
  */
-chrome.notifications.onClicked.addListener((notificationId) => {
+chrome.notifications.onClicked.addListener(async (notificationId) => {
   console.log('Notificación clickeada:', notificationId);
-  chrome.action.openPopup();
+  try {
+    // Intentar abrir el popup (puede fallar si no hay ventana con toolbar)
+    await chrome.action.openPopup();
+  } catch (error) {
+    console.log('No se pudo abrir popup automáticamente:', error.message);
+    // Usuario deberá hacer click manualmente en el icono de la extensión
+  }
 });
 
 // ============================================
