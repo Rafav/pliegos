@@ -4,22 +4,23 @@
  */
 
 // Configuración de fuentes con URLs de búsqueda y soporte de paginación
+// Basado en análisis real de cada sitio web
 const SOURCES = {
   bne: {
     name: 'BNE Digital',
     url: 'https://bnedigital.bne.es/bd/es/results?y=s&w={query}&f=ficha&g=ws',
     pagination: {
-      type: 'page',
-      param: 'p',
-      resultsPerPage: 20,
-      urlTemplate: 'https://bnedigital.bne.es/bd/es/results?y=s&w={query}&f=ficha&g=ws&p={page}'
+      type: 'start',  // Usa parámetro 's' (start)
+      param: 's',
+      resultsPerPage: 10,
+      urlTemplate: 'https://bnedigital.bne.es/bd/es/results?y=s&w={query}&f=ficha&g=ws&s={start}'
     }
   },
   cordel: {
     name: 'Desenrollando el cordel',
     url: 'https://desenrollandoelcordel.unige.ch/search.html?query={query}&start=1',
     pagination: {
-      type: 'start',
+      type: 'start',  // Usa 'start': 1, 11, 21, 31...
       param: 'start',
       resultsPerPage: 10,
       urlTemplate: 'https://desenrollandoelcordel.unige.ch/search.html?query={query}&start={start}'
@@ -28,31 +29,26 @@ const SOURCES = {
   mapping: {
     name: 'Mapping Pliegos',
     url: 'https://biblioteca.cchs.csic.es/MappingPliegos/resultadobusquedavanzada.php?TITULO={query}',
-    pagination: {
-      type: 'page',
-      param: 'pagina',
-      resultsPerPage: 20,
-      urlTemplate: 'https://biblioteca.cchs.csic.es/MappingPliegos/resultadobusquedavanzada.php?TITULO={query}&pagina={page}'
-    }
+    pagination: null  // No pagina - devuelve todos los resultados
   },
   aracne: {
     name: 'Red-aracne',
     url: 'https://www.red-aracne.es/busqueda/resultados.htm?av=true&tituloDescricion={query}',
     pagination: {
-      type: 'page',
-      param: 'pagina',
-      resultsPerPage: 15,
-      urlTemplate: 'https://www.red-aracne.es/busqueda/resultados.htm?av=true&tituloDescricion={query}&pagina={page}'
+      type: 'page',  // Usa 'paxina' (con x): 1, 2, 3...
+      param: 'paxina',
+      resultsPerPage: 10,
+      urlTemplate: 'https://www.red-aracne.es/busqueda/resultados.htm?paxina={page}&tituloDescricion={query}&av=true'
     }
   },
   funjdiaz: {
     name: 'Fundación Joaquín Díaz',
     url: 'https://funjdiaz.net/pliegos-listado.php?t={query}',
     pagination: {
-      type: 'offset',
-      param: 'offset',
-      resultsPerPage: 50,
-      urlTemplate: 'https://funjdiaz.net/pliegos-listado.php?t={query}&offset={offset}'
+      type: 'page',  // Usa 'pag': 1, 2, 3...
+      param: 'pag',
+      resultsPerPage: 20,
+      urlTemplate: 'https://funjdiaz.net/pliegos-listado.php?t={query}&pag={page}'
     }
   }
 };
@@ -241,7 +237,7 @@ async function realizarBusqueda() {
 }
 
 /**
- * Construir URLs (solo página 1, el content script manejará paginación)
+ * Construir URLs con paginación correcta para cada fuente
  */
 function construirURLsConPaginacion(fuentesSeleccionadas, query, paginas) {
   const urls = [];
@@ -253,10 +249,40 @@ function construirURLsConPaginacion(fuentesSeleccionadas, query, paginas) {
       return;
     }
 
-    // Solo generar URL de la página 1
-    // El content script se encargará de navegar a las siguientes páginas
-    const url = source.url.replace('{query}', encodeURIComponent(query));
-    urls.push(url);
+    // Página 1 siempre
+    const url1 = source.url.replace('{query}', encodeURIComponent(query));
+    urls.push(url1);
+
+    // Si paginación está activada y soportada
+    if (paginas > 1 && source.pagination) {
+      for (let pagina = 2; pagina <= paginas; pagina++) {
+        let urlPagina;
+
+        if (source.pagination.type === 'page') {
+          // Tipo page: simplemente usar número de página (2, 3, 4...)
+          urlPagina = source.pagination.urlTemplate
+            .replace('{query}', encodeURIComponent(query))
+            .replace('{page}', pagina);
+        } else if (source.pagination.type === 'start') {
+          // Tipo start: calcular offset basado en resultsPerPage
+          let startValue;
+          if (sourceId === 'bne') {
+            // BNE: página 2 = s=10, página 3 = s=20
+            startValue = (pagina - 1) * source.pagination.resultsPerPage;
+          } else {
+            // Desenrollando: página 2 = start=11, página 3 = start=21
+            startValue = ((pagina - 1) * source.pagination.resultsPerPage) + 1;
+          }
+          urlPagina = source.pagination.urlTemplate
+            .replace('{query}', encodeURIComponent(query))
+            .replace('{start}', startValue);
+        }
+
+        if (urlPagina) {
+          urls.push(urlPagina);
+        }
+      }
+    }
   });
 
   return urls;
