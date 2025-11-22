@@ -207,11 +207,11 @@ Todos los estilos están en `popup.css`. El diseño usa:
 
 Ideas para extender la extensión:
 
-- [ ] **Scraping de resultados**: Extraer y mostrar resumen unificado
+- [x] **Scraping de resultados**: Extraer y mostrar resumen unificado ✅ (v2.0)
+- [x] **Notificaciones**: Avisar cuando terminen de cargar las páginas ✅ (v2.0)
 - [ ] **Tab Groups**: Agrupar automáticamente las pestañas por búsqueda
 - [ ] **Historial**: Guardar y mostrar búsquedas anteriores
 - [ ] **Exportar**: Guardar todas las URLs en un archivo
-- [ ] **Notificaciones**: Avisar cuando terminen de cargar las páginas
 - [ ] **Estadísticas**: Mostrar uso de la extensión
 - [ ] **Filtros**: Filtrar resultados por fecha, tipo, etc.
 - [ ] **Marcadores**: Guardar resultados interesantes
@@ -258,7 +258,15 @@ Para problemas técnicos:
 
 ### v2.0.0 (Noviembre 2025)
 - ✨ **Paginación inteligente**: Obtén múltiples páginas de resultados (1-5 páginas por fuente)
+  - BNE: parámetro 's' (start) - s=10, s=20, s=30...
+  - Desenrollando: parámetro 'start' - start=11, 21, 31...
+  - Mapping Pliegos: sin paginación (devuelve todos los resultados)
+  - Red-aracne: parámetro 'paxina' - paxina=2, 3, 4...
+  - Joaquín Díaz: parámetro 'pag' - pag=2, 3, 4...
 - ✨ **Scraping automático**: Extracción de resultados de todas las páginas
+  - Scraper genérico para BNE, Mapping Pliegos y Red-aracne
+  - Scraper específico para Joaquín Díaz (manejo de enlaces id=XXXX)
+  - Scraper específico para Desenrollando (manejo de Shadow DOM y Web Components)
 - ✨ **Resumen unificado**: Vista consolidada de todos los resultados por fuente
 - ✨ **Notificaciones**: Avisos cuando termine la búsqueda
 - ✨ **Badge con progreso**: Contador en el icono de la extensión
