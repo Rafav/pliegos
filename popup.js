@@ -71,6 +71,10 @@ const enableScrapingCheckbox = document.getElementById('enableScraping');
 const resumenResultadosDiv = document.getElementById('resumenResultados');
 const resumenContenidoDiv = document.getElementById('resumenContenido');
 const cerrarResumenBtn = document.getElementById('cerrarResumen');
+const exportarTXTBtn = document.getElementById('exportarTXT');
+
+// Variable global para guardar datos del último scraping
+let ultimoScrapingData = null;
 
 // ============================================
 // EVENT LISTENERS
@@ -130,6 +134,15 @@ enableScrapingCheckbox.addEventListener('change', guardarEstado);
 // Cerrar resumen
 cerrarResumenBtn.addEventListener('click', () => {
   resumenResultadosDiv.style.display = 'none';
+});
+
+// Exportar resumen a TXT
+exportarTXTBtn.addEventListener('click', () => {
+  if (ultimoScrapingData) {
+    exportarScrapingATXT(ultimoScrapingData);
+  } else {
+    mostrarEstado('⚠️ No hay datos para exportar', 'error');
+  }
 });
 
 // ============================================
@@ -365,6 +378,9 @@ function escucharProgresoScraping() {
  * Mostrar resumen de scraping
  */
 function mostrarResumenScraping(scraping) {
+  // Guardar datos para exportar
+  ultimoScrapingData = scraping;
+
   const totalResultados = scraping.resultados.reduce((sum, r) => sum + r.datos.length, 0);
   const tiempoSegundos = (scraping.tiempoTotal / 1000).toFixed(1);
 
@@ -507,6 +523,109 @@ queryInput.addEventListener('input', () => {
     chrome.storage.local.set({ lastQuery: queryInput.value });
   }, 500);
 });
+
+/**
+ * Exportar resultados del scraping a archivo TXT
+ */
+function exportarScrapingATXT(scraping) {
+  console.log('Exportando scraping a TXT...', scraping);
+
+  // Calcular estadísticas
+  const totalResultados = scraping.resultados.reduce((sum, r) => sum + r.datos.length, 0);
+  const tiempoSegundos = (scraping.tiempoTotal / 1000).toFixed(1);
+  const fecha = new Date().toLocaleString('es-ES', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+
+  // Construir contenido del archivo
+  let contenido = '';
+  contenido += '═══════════════════════════════════════════════════════════\n';
+  contenido += '      METABUSCADOR DE PLIEGOS - RESULTADOS SCRAPING         \n';
+  contenido += '═══════════════════════════════════════════════════════════\n\n';
+  contenido += `Búsqueda:          "${scraping.query}"\n`;
+  contenido += `Fecha:             ${fecha}\n`;
+  contenido += `Total resultados:  ${totalResultados}\n`;
+  contenido += `Tiempo:            ${tiempoSegundos}s\n`;
+  contenido += `Fuentes exitosas:  ${scraping.resultados.length}\n`;
+  contenido += `Fuentes con error: ${scraping.errores.length}\n`;
+  contenido += '\n';
+
+  // Resultados por fuente
+  scraping.resultados.forEach((resultado, idx) => {
+    const nombreFuente = resultado.fuente.toUpperCase();
+    const separador = '='.repeat(nombreFuente.length + 4);
+
+    contenido += separador + '\n';
+    contenido += `  ${nombreFuente}  \n`;
+    contenido += separador + '\n';
+    contenido += `Resultados encontrados: ${resultado.datos.length}\n\n`;
+
+    if (resultado.datos.length > 0) {
+      resultado.datos.forEach((item, i) => {
+        contenido += `${i + 1}. ${item.titulo}\n`;
+        contenido += `   URL: ${item.url}\n`;
+        if (item.autor) {
+          contenido += `   Autor: ${item.autor}\n`;
+        }
+        if (item.fecha) {
+          contenido += `   Fecha: ${item.fecha}\n`;
+        }
+        contenido += '\n';
+      });
+    } else {
+      contenido += '(Sin resultados)\n\n';
+    }
+
+    contenido += '\n';
+  });
+
+  // Errores
+  if (scraping.errores.length > 0) {
+    contenido += '═══════════════════════════════════════════════════════════\n';
+    contenido += '  FUENTES CON ERRORES  \n';
+    contenido += '═══════════════════════════════════════════════════════════\n\n';
+
+    scraping.errores.forEach(error => {
+      contenido += `❌ ${error.fuente || 'Desconocida'}\n`;
+      contenido += `   Error: ${error.error || 'Error desconocido'}\n\n`;
+    });
+  }
+
+  contenido += '\n';
+  contenido += '═══════════════════════════════════════════════════════════\n';
+  contenido += 'Generado por Metabuscador de Pliegos v2.0\n';
+  contenido += 'https://github.com/Rafav/pliegos\n';
+  contenido += '═══════════════════════════════════════════════════════════\n';
+
+  // Crear blob y descargar
+  const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+
+  // Crear nombre de archivo con timestamp
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+  const filename = `pliegos-${scraping.query}-${timestamp}.txt`;
+
+  // Crear link temporal y disparar descarga
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+
+  // Limpiar
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+
+  mostrarEstado(`💾 Archivo "${filename}" descargado`, 'success');
+  console.log('Archivo TXT generado:', filename);
+}
 
 // ============================================
 // INICIALIZACIÓN
