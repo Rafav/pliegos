@@ -8,12 +8,12 @@
 const SOURCES = {
   bne: {
     name: 'BNE Digital',
-    url: 'https://bnedigital.bne.es/bd/es/results?y=s&w={query}&f=ficha&g=ws',
+    url: 'https://bnedigital.bne.es/bd/es/results?y=s&o=&w={query}&f=ficha&o=&w=&f=texto_ficha&g=ws',
     pagination: {
       type: 'start',  // Usa parámetro 's' (start)
       param: 's',
       resultsPerPage: 10,
-      urlTemplate: 'https://bnedigital.bne.es/bd/es/results?y=s&w={query}&f=ficha&g=ws&s={start}'
+      urlTemplate: 'https://bnedigital.bne.es/bd/es/results?y=s&o=&w={query}&f=ficha&o=&w=&f=texto_ficha&g=ws&s={start}'
     }
   },
   cordel: {
