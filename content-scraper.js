@@ -42,7 +42,17 @@
   function iniciar() {
     setTimeout(() => {
       try {
-        const resultados = scrapearGenerico();
+        let resultados;
+
+        // Scrapers específicos para sitios problemáticos
+        if (sourceId === 'funjdiaz') {
+          resultados = scrapearJoaquinDiaz();
+        } else if (sourceId === 'cordel') {
+          resultados = scrapearDesenrollando();
+        } else {
+          resultados = scrapearGenerico();
+        }
+
         console.log(resultados.length, 'resultados encontrados');
         enviarResultados(resultados);
       } catch (error) {
@@ -145,6 +155,138 @@
       if (a) return new URL(a.href, window.location.href).href;
     } catch (e) {}
     return '';
+  }
+
+  function scrapearJoaquinDiaz() {
+    console.log('Scraping Joaquín Díaz con estrategia específica');
+
+    // Los resultados son links con patrón: pliegos-listado.php?id=XXXX&qry=...
+    const links = document.querySelectorAll('a[href*="pliegos-listado.php?id="]');
+    const resultados = [];
+
+    console.log('Enlaces encontrados:', links.length);
+
+    links.forEach((link, i) => {
+      try {
+        const href = link.href;
+        const texto = link.textContent.trim();
+
+        // Extraer el ID del pliego
+        const match = href.match(/id=(\d+)/);
+        const id = match ? match[1] : i;
+
+        if (texto && texto.length > 3) {
+          resultados.push({
+            id: 'funjdiaz_' + Date.now() + '_' + id,
+            titulo: texto.substring(0, 200),
+            url: href,
+            fuente: nombreFuente
+          });
+        }
+      } catch (e) {
+        console.warn('Error procesando link:', e);
+      }
+    });
+
+    console.log('Joaquín Díaz - resultados procesados:', resultados.length);
+    return resultados;
+  }
+
+  function scrapearDesenrollando() {
+    console.log('Scraping Desenrollando con estrategia específica (Shadow DOM)');
+
+    const resultados = [];
+
+    // Estrategia 1: Intentar acceder al Shadow DOM de pb-page
+    try {
+      const pbPage = document.querySelector('pb-page');
+      if (pbPage && pbPage.shadowRoot) {
+        console.log('Shadow DOM encontrado en pb-page');
+        const shadowLinks = pbPage.shadowRoot.querySelectorAll('a[href]');
+        console.log('Links en Shadow DOM:', shadowLinks.length);
+
+        shadowLinks.forEach((link, i) => {
+          const texto = link.textContent.trim();
+          if (texto && texto.length > 10) {
+            resultados.push({
+              id: 'cordel_' + Date.now() + '_' + i,
+              titulo: texto.substring(0, 200),
+              url: link.href,
+              fuente: nombreFuente
+            });
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('Error accediendo a Shadow DOM pb-page:', e);
+    }
+
+    // Estrategia 2: Buscar pb-results o pb-load
+    if (resultados.length === 0) {
+      try {
+        const pbResults = document.querySelector('pb-results, pb-load');
+        if (pbResults && pbResults.shadowRoot) {
+          console.log('Shadow DOM encontrado en pb-results/pb-load');
+          const shadowLinks = pbResults.shadowRoot.querySelectorAll('a[href]');
+          console.log('Links encontrados:', shadowLinks.length);
+
+          shadowLinks.forEach((link, i) => {
+            const texto = link.textContent.trim();
+            if (texto && texto.length > 10) {
+              resultados.push({
+                id: 'cordel_' + Date.now() + '_' + i,
+                titulo: texto.substring(0, 200),
+                url: link.href,
+                fuente: nombreFuente
+              });
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('Error accediendo a Shadow DOM pb-results:', e);
+      }
+    }
+
+    // Estrategia 3: Buscar cualquier Web Component con Shadow DOM
+    if (resultados.length === 0) {
+      try {
+        const allElements = document.querySelectorAll('*');
+        console.log('Buscando Shadow DOM en todos los elementos...');
+
+        for (const el of allElements) {
+          if (el.shadowRoot) {
+            console.log('Shadow DOM encontrado en:', el.tagName);
+            const links = el.shadowRoot.querySelectorAll('a[href]');
+            if (links.length > 0) {
+              console.log('Links encontrados en', el.tagName, ':', links.length);
+              links.forEach((link, i) => {
+                const texto = link.textContent.trim();
+                if (texto && texto.length > 10) {
+                  resultados.push({
+                    id: 'cordel_' + Date.now() + '_' + i,
+                    titulo: texto.substring(0, 200),
+                    url: link.href,
+                    fuente: nombreFuente
+                  });
+                }
+              });
+              break; // Encontramos resultados, salir
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Error buscando Shadow DOM:', e);
+      }
+    }
+
+    // Estrategia 4: Fallback - buscar en el DOM normal
+    if (resultados.length === 0) {
+      console.log('Intentando scraping genérico como fallback...');
+      return scrapearGenerico();
+    }
+
+    console.log('Desenrollando - resultados procesados:', resultados.length);
+    return resultados;
   }
 
 })();
