@@ -76,6 +76,13 @@ const exportarTXTBtn = document.getElementById('exportarTXT');
 // Variable global para guardar datos del último scraping
 let ultimoScrapingData = null;
 
+// Verificar que el botón exportar existe
+if (exportarTXTBtn) {
+  console.log('✅ Botón exportarTXT encontrado');
+} else {
+  console.error('❌ Botón exportarTXT NO encontrado');
+}
+
 // ============================================
 // EVENT LISTENERS
 // ============================================
@@ -138,9 +145,18 @@ cerrarResumenBtn.addEventListener('click', () => {
 
 // Exportar resumen a TXT
 exportarTXTBtn.addEventListener('click', () => {
+  console.log('🖱️ Click en exportar TXT');
+  console.log('Datos disponibles:', !!ultimoScrapingData);
+
   if (ultimoScrapingData) {
-    exportarScrapingATXT(ultimoScrapingData);
+    try {
+      exportarScrapingATXT(ultimoScrapingData);
+    } catch (error) {
+      console.error('❌ Error al exportar:', error);
+      mostrarEstado('❌ Error al exportar: ' + error.message, 'error');
+    }
   } else {
+    console.warn('No hay datos para exportar');
     mostrarEstado('⚠️ No hay datos para exportar', 'error');
   }
 });
@@ -602,29 +618,52 @@ function exportarScrapingATXT(scraping) {
   contenido += 'https://github.com/Rafav/pliegos\n';
   contenido += '═══════════════════════════════════════════════════════════\n';
 
-  // Crear blob y descargar
-  const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
+  try {
+    // Crear blob
+    console.log('📦 Creando blob con', contenido.length, 'caracteres');
+    const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8' });
+    console.log('✅ Blob creado:', blob.size, 'bytes');
 
-  // Crear nombre de archivo con timestamp
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-  const filename = `pliegos-${scraping.query}-${timestamp}.txt`;
+    const url = URL.createObjectURL(blob);
+    console.log('🔗 URL creada:', url);
 
-  // Crear link temporal y disparar descarga
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
+    // Sanitizar query para nombre de archivo (eliminar caracteres problemáticos)
+    const querySanitizada = scraping.query
+      .replace(/[^a-zA-Z0-9\s]/g, '') // Solo letras, números y espacios
+      .replace(/\s+/g, '-')            // Espacios a guiones
+      .substring(0, 30);               // Max 30 caracteres
 
-  // Limpiar
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 100);
+    // Crear nombre de archivo con timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const filename = `pliegos-${querySanitizada}-${timestamp}.txt`;
+    console.log('📝 Nombre de archivo:', filename);
 
-  mostrarEstado(`💾 Archivo "${filename}" descargado`, 'success');
-  console.log('Archivo TXT generado:', filename);
+    // Crear link temporal y disparar descarga
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    console.log('🔗 Link añadido al DOM');
+
+    a.click();
+    console.log('✅ Click disparado en el link');
+
+    // Limpiar
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      console.log('🧹 Limpieza completada');
+    }, 100);
+
+    mostrarEstado(`💾 Archivo "${filename}" descargado`, 'success');
+    console.log('✅ Exportación completada exitosamente');
+
+  } catch (error) {
+    console.error('❌ Error en proceso de descarga:', error);
+    mostrarEstado('❌ Error al descargar: ' + error.message, 'error');
+    throw error;
+  }
 }
 
 // ============================================
