@@ -40,7 +40,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'searchWithScraping') {
-    buscarConScraping(request.query, request.urls, request.newWindow, request.fuentesInfo)
+    buscarConScraping(
+      request.query,
+      request.urls,
+      request.newWindow,
+      request.fuentesInfo,
+      request.maxPages,
+      request.paginationConfig
+    )
       .then(resultado => sendResponse(resultado))
       .catch(error => sendResponse({ success: false, error: error.message }));
 
@@ -67,8 +74,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 /**
  * Búsqueda con scraping (v2.0)
  */
-async function buscarConScraping(query, urls, newWindow = false, fuentesInfo = []) {
-  console.log(`🚀 Iniciando búsqueda con scraping: "${query}"`);
+async function buscarConScraping(query, urls, newWindow = false, fuentesInfo = [], maxPages = 1, paginationConfig = {}) {
+  console.log(`🚀 Iniciando búsqueda con scraping: "${query}" (${maxPages} páginas por fuente)`);
 
   // Inicializar estado
   scrapingState = {
@@ -79,7 +86,10 @@ async function buscarConScraping(query, urls, newWindow = false, fuentesInfo = [
     resultados: [],
     errores: [],
     inicioTimestamp: Date.now(),
-    tabsIds: []
+    tabsIds: [],
+    maxPages: maxPages,
+    paginationConfig: paginationConfig,
+    fuentesInfo: fuentesInfo
   };
 
   try {
@@ -153,12 +163,26 @@ function inyectarScraperCuandoCargue(tabId) {
         files: ['content-scraper.js']
       }).then(() => {
         console.log(`✅ Script inyectado en tab ${tabId}`);
-      }).catch(error => {
+      }).catch(async (error) => {
         console.error(`❌ Error inyectando script en tab ${tabId}:`, error);
+
+        // Intentar obtener info de la tab
+        let fuente = 'Desconocida';
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          const url = new URL(tab.url);
+          fuente = url.hostname || 'Desconocida';
+        } catch (e) {
+          // Ignorar si la tab fue cerrada
+        }
+
         scrapingState.errores.push({
           tabId: tabId,
-          error: error.message
+          fuente: fuente,
+          error: `Error al inyectar script: ${error.message}`
         });
+        scrapingState.completadas++;
+        actualizarBadge();
         verificarSiTermino();
       });
 
@@ -168,13 +192,30 @@ function inyectarScraperCuandoCargue(tabId) {
   });
 
   // Timeout: si no carga en 30s, marcar como error
-  setTimeout(() => {
-    if (scrapingState.activo && !scrapingState.resultados.find(r => r.tabId === tabId)) {
-      console.warn(`⏱️ Timeout: Tab ${tabId} no respondió en 30s`);
+  setTimeout(async () => {
+    // Verificar si la tab ya respondió
+    const yaRespondio = scrapingState.resultados.find(r => r.tabId === tabId) ||
+                        scrapingState.errores.find(e => e.tabId === tabId);
+
+    if (scrapingState.activo && !yaRespondio) {
+      // Intentar obtener info de la tab
+      let fuente = 'Desconocida';
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        const url = new URL(tab.url);
+        fuente = url.hostname || 'Desconocida';
+      } catch (e) {
+        // Tab puede haber sido cerrada
+      }
+
+      console.warn(`⏱️ Timeout: Tab ${tabId} (${fuente}) no respondió en 30s`);
       scrapingState.errores.push({
         tabId: tabId,
-        error: 'Timeout al cargar página'
+        fuente: fuente,
+        error: 'Timeout al cargar página (30s)'
       });
+      scrapingState.completadas++;  // ← CRÍTICO: incrementar completadas
+      actualizarBadge();
       verificarSiTermino();
     }
   }, 30000);
@@ -264,15 +305,136 @@ function finalizarScraping() {
   chrome.action.setBadgeText({ text: '' });
 
   // Guardar resultados para el popup
-  chrome.storage.local.set({
-    ultimoScraping: {
-      query: scrapingState.query,
-      resultados: scrapingState.resultados,
-      errores: scrapingState.errores,
-      timestamp: Date.now(),
-      tiempoTotal: tiempoTotal
-    }
+  const scrapingData = {
+    query: scrapingState.query,
+    resultados: scrapingState.resultados,
+    errores: scrapingState.errores,
+    timestamp: Date.now(),
+    tiempoTotal: tiempoTotal
+  };
+
+  chrome.storage.local.set({ ultimoScraping: scrapingData });
+
+  // Auto-descargar TXT
+  descargarResultadosTXT(scrapingData);
+}
+
+/**
+ * Descargar resultados como archivo TXT
+ */
+async function descargarResultadosTXT(scraping) {
+  try {
+    console.log('📝 Generando archivo TXT automáticamente...');
+
+    // Generar contenido del archivo
+    const contenido = generarContenidoTXT(scraping);
+
+    // Sanitizar query para nombre de archivo
+    const querySanitizada = scraping.query
+      .replace(/[^a-zA-Z0-9\s]/g, '')
+      .replace(/\s+/g, '-')
+      .substring(0, 30);
+
+    // Nombre de archivo con timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const filename = `pliegos-${querySanitizada}-${timestamp}.txt`;
+
+    // Crear Data URL (funciona en service workers, a diferencia de blob URL)
+    const dataUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(contenido);
+
+    // Descargar usando Chrome Downloads API
+    chrome.downloads.download({
+      url: dataUrl,
+      filename: filename,
+      saveAs: false  // Descargar automáticamente sin preguntar
+    }, (downloadId) => {
+      if (chrome.runtime.lastError) {
+        console.error('❌ Error descargando:', chrome.runtime.lastError);
+      } else {
+        console.log('✅ Archivo descargado:', filename, 'ID:', downloadId);
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error generando TXT:', error);
+  }
+}
+
+/**
+ * Generar contenido del archivo TXT
+ */
+function generarContenidoTXT(scraping) {
+  const totalResultados = scraping.resultados.reduce((sum, r) => sum + r.datos.length, 0);
+  const tiempoSegundos = (scraping.tiempoTotal / 1000).toFixed(1);
+  const fecha = new Date().toLocaleString('es-ES', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
   });
+
+  let contenido = '';
+  contenido += '═══════════════════════════════════════════════════════════\n';
+  contenido += '      METABUSCADOR DE PLIEGOS - RESULTADOS SCRAPING         \n';
+  contenido += '═══════════════════════════════════════════════════════════\n\n';
+  contenido += `Búsqueda:          "${scraping.query}"\n`;
+  contenido += `Fecha:             ${fecha}\n`;
+  contenido += `Total resultados:  ${totalResultados}\n`;
+  contenido += `Tiempo:            ${tiempoSegundos}s\n`;
+  contenido += `Fuentes exitosas:  ${scraping.resultados.length}\n`;
+  contenido += `Fuentes con error: ${scraping.errores.length}\n`;
+  contenido += '\n';
+
+  // Resultados por fuente
+  scraping.resultados.forEach((resultado) => {
+    const nombreFuente = resultado.fuente.toUpperCase();
+    const separador = '='.repeat(nombreFuente.length + 4);
+
+    contenido += separador + '\n';
+    contenido += `  ${nombreFuente}  \n`;
+    contenido += separador + '\n';
+    contenido += `Resultados encontrados: ${resultado.datos.length}\n\n`;
+
+    if (resultado.datos.length > 0) {
+      resultado.datos.forEach((item, i) => {
+        contenido += `${i + 1}. ${item.titulo}\n`;
+        contenido += `   URL: ${item.url}\n`;
+        if (item.autor) {
+          contenido += `   Autor: ${item.autor}\n`;
+        }
+        if (item.fecha) {
+          contenido += `   Fecha: ${item.fecha}\n`;
+        }
+        contenido += '\n';
+      });
+    } else {
+      contenido += '(Sin resultados)\n\n';
+    }
+
+    contenido += '\n';
+  });
+
+  // Errores
+  if (scraping.errores.length > 0) {
+    contenido += '═══════════════════════════════════════════════════════════\n';
+    contenido += '  FUENTES CON ERRORES  \n';
+    contenido += '═══════════════════════════════════════════════════════════\n\n';
+
+    scraping.errores.forEach(error => {
+      contenido += `❌ ${error.fuente || 'Desconocida'}\n`;
+      contenido += `   Error: ${error.error || 'Error desconocido'}\n\n`;
+    });
+  }
+
+  contenido += '\n';
+  contenido += '═══════════════════════════════════════════════════════════\n';
+  contenido += 'Generado por Metabuscador de Pliegos v2.0\n';
+  contenido += 'https://github.com/Rafav/pliegos\n';
+  contenido += '═══════════════════════════════════════════════════════════\n';
+
+  return contenido;
 }
 
 /**
@@ -291,9 +453,9 @@ function mostrarNotificacion(totalResultados, exitosas, fallidas) {
   let mensaje;
 
   if (fallidas === 0) {
-    mensaje = `Se encontraron ${totalResultados} resultados en ${exitosas} fuentes`;
+    mensaje = `${totalResultados} resultados en ${exitosas} fuentes\n📥 Archivo TXT descargado`;
   } else {
-    mensaje = `${totalResultados} resultados (${exitosas} fuentes OK, ${fallidas} fallidas)`;
+    mensaje = `${totalResultados} resultados (${exitosas} OK, ${fallidas} fallidas)\n📥 Archivo TXT descargado`;
   }
 
   chrome.notifications.create({
@@ -316,9 +478,15 @@ function mostrarNotificacion(totalResultados, exitosas, fallidas) {
 /**
  * Click en notificación → Abrir popup con resultados
  */
-chrome.notifications.onClicked.addListener((notificationId) => {
+chrome.notifications.onClicked.addListener(async (notificationId) => {
   console.log('Notificación clickeada:', notificationId);
-  chrome.action.openPopup();
+  try {
+    // Intentar abrir el popup (puede fallar si no hay ventana con toolbar)
+    await chrome.action.openPopup();
+  } catch (error) {
+    console.log('No se pudo abrir popup automáticamente:', error.message);
+    // Usuario deberá hacer click manualmente en el icono de la extensión
+  }
 });
 
 // ============================================

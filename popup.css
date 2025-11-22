@@ -464,6 +464,16 @@ footer strong {
   margin-bottom: 12px;
 }
 
+.resumen-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.resumen-actions button {
+  flex: 1;
+}
+
 #resumenContenido::-webkit-scrollbar {
   width: 6px;
 }

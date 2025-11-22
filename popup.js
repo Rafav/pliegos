@@ -4,22 +4,23 @@
  */
 
 // Configuración de fuentes con URLs de búsqueda y soporte de paginación
+// Basado en análisis real de cada sitio web
 const SOURCES = {
   bne: {
     name: 'BNE Digital',
-    url: 'https://bnedigital.bne.es/bd/es/results?y=s&w={query}&f=ficha&g=ws',
+    url: 'https://bnedigital.bne.es/bd/es/results?y=s&o=&w={query}&f=ficha&o=&w=&f=texto_ficha&g=ws',
     pagination: {
-      type: 'page',
-      param: 'p',
-      resultsPerPage: 20,
-      urlTemplate: 'https://bnedigital.bne.es/bd/es/results?y=s&w={query}&f=ficha&g=ws&p={page}'
+      type: 'start',  // Usa parámetro 's' (start)
+      param: 's',
+      resultsPerPage: 10,
+      urlTemplate: 'https://bnedigital.bne.es/bd/es/results?y=s&o=&w={query}&f=ficha&o=&w=&f=texto_ficha&g=ws&s={start}'
     }
   },
   cordel: {
     name: 'Desenrollando el cordel',
     url: 'https://desenrollandoelcordel.unige.ch/search.html?query={query}&start=1',
     pagination: {
-      type: 'start',
+      type: 'start',  // Usa 'start': 1, 11, 21, 31...
       param: 'start',
       resultsPerPage: 10,
       urlTemplate: 'https://desenrollandoelcordel.unige.ch/search.html?query={query}&start={start}'
@@ -28,31 +29,26 @@ const SOURCES = {
   mapping: {
     name: 'Mapping Pliegos',
     url: 'https://biblioteca.cchs.csic.es/MappingPliegos/resultadobusquedavanzada.php?TITULO={query}',
-    pagination: {
-      type: 'page',
-      param: 'pagina',
-      resultsPerPage: 20,
-      urlTemplate: 'https://biblioteca.cchs.csic.es/MappingPliegos/resultadobusquedavanzada.php?TITULO={query}&pagina={page}'
-    }
+    pagination: null  // No pagina - devuelve todos los resultados
   },
   aracne: {
     name: 'Red-aracne',
     url: 'https://www.red-aracne.es/busqueda/resultados.htm?av=true&tituloDescricion={query}',
     pagination: {
-      type: 'page',
-      param: 'pagina',
-      resultsPerPage: 15,
-      urlTemplate: 'https://www.red-aracne.es/busqueda/resultados.htm?av=true&tituloDescricion={query}&pagina={page}'
+      type: 'page',  // Usa 'paxina' (con x): 1, 2, 3...
+      param: 'paxina',
+      resultsPerPage: 10,
+      urlTemplate: 'https://www.red-aracne.es/busqueda/resultados.htm?paxina={page}&tituloDescricion={query}&av=true'
     }
   },
   funjdiaz: {
     name: 'Fundación Joaquín Díaz',
     url: 'https://funjdiaz.net/pliegos-listado.php?t={query}',
     pagination: {
-      type: 'offset',
-      param: 'offset',
-      resultsPerPage: 50,
-      urlTemplate: 'https://funjdiaz.net/pliegos-listado.php?t={query}&offset={offset}'
+      type: 'page',  // Usa 'pag': 1, 2, 3...
+      param: 'pag',
+      resultsPerPage: 20,
+      urlTemplate: 'https://funjdiaz.net/pliegos-listado.php?t={query}&pag={page}'
     }
   }
 };
@@ -75,6 +71,17 @@ const enableScrapingCheckbox = document.getElementById('enableScraping');
 const resumenResultadosDiv = document.getElementById('resumenResultados');
 const resumenContenidoDiv = document.getElementById('resumenContenido');
 const cerrarResumenBtn = document.getElementById('cerrarResumen');
+const exportarTXTBtn = document.getElementById('exportarTXT');
+
+// Variable global para guardar datos del último scraping
+let ultimoScrapingData = null;
+
+// Verificar que el botón exportar existe
+if (exportarTXTBtn) {
+  console.log('✅ Botón exportarTXT encontrado');
+} else {
+  console.error('❌ Botón exportarTXT NO encontrado');
+}
 
 // ============================================
 // EVENT LISTENERS
@@ -134,6 +141,24 @@ enableScrapingCheckbox.addEventListener('change', guardarEstado);
 // Cerrar resumen
 cerrarResumenBtn.addEventListener('click', () => {
   resumenResultadosDiv.style.display = 'none';
+});
+
+// Exportar resumen a TXT
+exportarTXTBtn.addEventListener('click', () => {
+  console.log('🖱️ Click en exportar TXT');
+  console.log('Datos disponibles:', !!ultimoScrapingData);
+
+  if (ultimoScrapingData) {
+    try {
+      exportarScrapingATXT(ultimoScrapingData);
+    } catch (error) {
+      console.error('❌ Error al exportar:', error);
+      mostrarEstado('❌ Error al exportar: ' + error.message, 'error');
+    }
+  } else {
+    console.warn('No hay datos para exportar');
+    mostrarEstado('⚠️ No hay datos para exportar', 'error');
+  }
 });
 
 // ============================================
@@ -199,7 +224,9 @@ async function realizarBusqueda() {
         query: query,
         urls: urls,
         newWindow: openInNewWindow,
-        fuentesInfo: obtenerInfoFuentes(fuentesSeleccionadas)
+        fuentesInfo: obtenerInfoFuentes(fuentesSeleccionadas),
+        maxPages: paginasPorFuente,
+        paginationConfig: obtenerConfigPaginacion(fuentesSeleccionadas)
       });
 
       if (response && response.success) {
@@ -239,7 +266,7 @@ async function realizarBusqueda() {
 }
 
 /**
- * Construir URLs con paginación
+ * Construir URLs con paginación correcta para cada fuente
  */
 function construirURLsConPaginacion(fuentesSeleccionadas, query, paginas) {
   const urls = [];
@@ -251,33 +278,39 @@ function construirURLsConPaginacion(fuentesSeleccionadas, query, paginas) {
       return;
     }
 
-    // Para cada fuente, generar URLs para cada página
-    for (let pagina = 1; pagina <= paginas; pagina++) {
-      let url;
+    // Página 1 siempre
+    const url1 = source.url.replace('{query}', encodeURIComponent(query));
+    urls.push(url1);
 
-      if (pagina === 1) {
-        // Primera página: usar URL base
-        url = source.url.replace('{query}', encodeURIComponent(query));
-      } else {
-        // Páginas siguientes: usar template de paginación
-        const pagination = source.pagination;
-        if (!pagination) continue;
+    // Si paginación está activada y soportada
+    if (paginas > 1 && source.pagination) {
+      for (let pagina = 2; pagina <= paginas; pagina++) {
+        let urlPagina;
 
-        url = pagination.urlTemplate.replace('{query}', encodeURIComponent(query));
+        if (source.pagination.type === 'page') {
+          // Tipo page: simplemente usar número de página (2, 3, 4...)
+          urlPagina = source.pagination.urlTemplate
+            .replace('{query}', encodeURIComponent(query))
+            .replace('{page}', pagina);
+        } else if (source.pagination.type === 'start') {
+          // Tipo start: calcular offset basado en resultsPerPage
+          let startValue;
+          if (sourceId === 'bne') {
+            // BNE: página 2 = s=10, página 3 = s=20
+            startValue = (pagina - 1) * source.pagination.resultsPerPage;
+          } else {
+            // Desenrollando: página 2 = start=11, página 3 = start=21
+            startValue = ((pagina - 1) * source.pagination.resultsPerPage) + 1;
+          }
+          urlPagina = source.pagination.urlTemplate
+            .replace('{query}', encodeURIComponent(query))
+            .replace('{start}', startValue);
+        }
 
-        // Reemplazar parámetro de paginación según el tipo
-        if (pagination.type === 'page') {
-          url = url.replace('{page}', pagina);
-        } else if (pagination.type === 'start') {
-          const start = ((pagina - 1) * pagination.resultsPerPage) + 1;
-          url = url.replace('{start}', start);
-        } else if (pagination.type === 'offset') {
-          const offset = (pagina - 1) * pagination.resultsPerPage;
-          url = url.replace('{offset}', offset);
+        if (urlPagina) {
+          urls.push(urlPagina);
         }
       }
-
-      urls.push(url);
     }
   });
 
@@ -295,42 +328,75 @@ function obtenerInfoFuentes(fuentesSeleccionadas) {
 }
 
 /**
- * Escuchar progreso del scraping
+ * Obtener configuración de paginación por fuente
+ */
+function obtenerConfigPaginacion(fuentesSeleccionadas) {
+  const config = {};
+  fuentesSeleccionadas.forEach(sourceId => {
+    const source = SOURCES[sourceId];
+    if (source && source.pagination) {
+      config[sourceId] = source.pagination;
+    }
+  });
+  return config;
+}
+
+/**
+ * Escuchar progreso del scraping (mejorado con logs)
  */
 function escucharProgresoScraping() {
-  // Polling cada segundo para ver el progreso
+  console.log('🎧 Iniciando escucha de scraping...');
+
+  let ultimoTimestamp = 0;
+  let checksRealizados = 0;
+  const maxChecks = 90; // 90 segundos máximo
+
   const interval = setInterval(async () => {
+    checksRealizados++;
+
     try {
       const data = await chrome.storage.local.get(['ultimoScraping']);
 
       if (data.ultimoScraping) {
         const scraping = data.ultimoScraping;
 
-        // Verificar si es de la búsqueda actual
-        const tiempoTranscurrido = Date.now() - scraping.timestamp;
-        if (tiempoTranscurrido < 5000) { // Menos de 5 segundos
+        // Si es un resultado nuevo (timestamp diferente al último)
+        if (scraping.timestamp > ultimoTimestamp) {
+          console.log('✅ Nuevo resultado detectado!');
+          ultimoTimestamp = scraping.timestamp;
+
           // Mostrar resumen
           mostrarResumenScraping(scraping);
           searchBtn.disabled = false;
           clearInterval(interval);
+        } else if (checksRealizados % 5 === 0) {
+          // Log cada 5 segundos
+          console.log(`⏳ Esperando resultado... (${checksRealizados}s)`);
         }
+      } else if (checksRealizados % 5 === 0) {
+        console.log(`⏳ Sin datos aún... (${checksRealizados}s)`);
       }
+
     } catch (error) {
-      console.error('Error al obtener progreso:', error);
+      console.error('❌ Error:', error);
+    }
+
+    if (checksRealizados >= maxChecks) {
+      console.warn('⏱️ Timeout alcanzado');
+      mostrarEstado('⏱️ Revisa la notificación o las pestañas abiertas', 'error');
+      searchBtn.disabled = false;
+      clearInterval(interval);
     }
   }, 1000);
-
-  // Timeout de 60 segundos
-  setTimeout(() => {
-    clearInterval(interval);
-    searchBtn.disabled = false;
-  }, 60000);
 }
 
 /**
  * Mostrar resumen de scraping
  */
 function mostrarResumenScraping(scraping) {
+  // Guardar datos para exportar
+  ultimoScrapingData = scraping;
+
   const totalResultados = scraping.resultados.reduce((sum, r) => sum + r.datos.length, 0);
   const tiempoSegundos = (scraping.tiempoTotal / 1000).toFixed(1);
 
@@ -435,6 +501,11 @@ async function restaurarEstado() {
       sourceCheckboxes.forEach(cb => {
         cb.checked = data.selectedSources.includes(cb.value);
       });
+    } else {
+      // Si no hay datos guardados, marcar TODAS las fuentes por defecto
+      sourceCheckboxes.forEach(cb => {
+        cb.checked = true;
+      });
     }
 
     // Restaurar modo de apertura
@@ -473,6 +544,132 @@ queryInput.addEventListener('input', () => {
     chrome.storage.local.set({ lastQuery: queryInput.value });
   }, 500);
 });
+
+/**
+ * Exportar resultados del scraping a archivo TXT
+ */
+function exportarScrapingATXT(scraping) {
+  console.log('Exportando scraping a TXT...', scraping);
+
+  // Calcular estadísticas
+  const totalResultados = scraping.resultados.reduce((sum, r) => sum + r.datos.length, 0);
+  const tiempoSegundos = (scraping.tiempoTotal / 1000).toFixed(1);
+  const fecha = new Date().toLocaleString('es-ES', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+
+  // Construir contenido del archivo
+  let contenido = '';
+  contenido += '═══════════════════════════════════════════════════════════\n';
+  contenido += '      METABUSCADOR DE PLIEGOS - RESULTADOS SCRAPING         \n';
+  contenido += '═══════════════════════════════════════════════════════════\n\n';
+  contenido += `Búsqueda:          "${scraping.query}"\n`;
+  contenido += `Fecha:             ${fecha}\n`;
+  contenido += `Total resultados:  ${totalResultados}\n`;
+  contenido += `Tiempo:            ${tiempoSegundos}s\n`;
+  contenido += `Fuentes exitosas:  ${scraping.resultados.length}\n`;
+  contenido += `Fuentes con error: ${scraping.errores.length}\n`;
+  contenido += '\n';
+
+  // Resultados por fuente
+  scraping.resultados.forEach((resultado, idx) => {
+    const nombreFuente = resultado.fuente.toUpperCase();
+    const separador = '='.repeat(nombreFuente.length + 4);
+
+    contenido += separador + '\n';
+    contenido += `  ${nombreFuente}  \n`;
+    contenido += separador + '\n';
+    contenido += `Resultados encontrados: ${resultado.datos.length}\n\n`;
+
+    if (resultado.datos.length > 0) {
+      resultado.datos.forEach((item, i) => {
+        contenido += `${i + 1}. ${item.titulo}\n`;
+        contenido += `   URL: ${item.url}\n`;
+        if (item.autor) {
+          contenido += `   Autor: ${item.autor}\n`;
+        }
+        if (item.fecha) {
+          contenido += `   Fecha: ${item.fecha}\n`;
+        }
+        contenido += '\n';
+      });
+    } else {
+      contenido += '(Sin resultados)\n\n';
+    }
+
+    contenido += '\n';
+  });
+
+  // Errores
+  if (scraping.errores.length > 0) {
+    contenido += '═══════════════════════════════════════════════════════════\n';
+    contenido += '  FUENTES CON ERRORES  \n';
+    contenido += '═══════════════════════════════════════════════════════════\n\n';
+
+    scraping.errores.forEach(error => {
+      contenido += `❌ ${error.fuente || 'Desconocida'}\n`;
+      contenido += `   Error: ${error.error || 'Error desconocido'}\n\n`;
+    });
+  }
+
+  contenido += '\n';
+  contenido += '═══════════════════════════════════════════════════════════\n';
+  contenido += 'Generado por Metabuscador de Pliegos v2.0\n';
+  contenido += 'https://github.com/Rafav/pliegos\n';
+  contenido += '═══════════════════════════════════════════════════════════\n';
+
+  try {
+    // Crear blob
+    console.log('📦 Creando blob con', contenido.length, 'caracteres');
+    const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8' });
+    console.log('✅ Blob creado:', blob.size, 'bytes');
+
+    const url = URL.createObjectURL(blob);
+    console.log('🔗 URL creada:', url);
+
+    // Sanitizar query para nombre de archivo (eliminar caracteres problemáticos)
+    const querySanitizada = scraping.query
+      .replace(/[^a-zA-Z0-9\s]/g, '') // Solo letras, números y espacios
+      .replace(/\s+/g, '-')            // Espacios a guiones
+      .substring(0, 30);               // Max 30 caracteres
+
+    // Crear nombre de archivo con timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const filename = `pliegos-${querySanitizada}-${timestamp}.txt`;
+    console.log('📝 Nombre de archivo:', filename);
+
+    // Crear link temporal y disparar descarga
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    console.log('🔗 Link añadido al DOM');
+
+    a.click();
+    console.log('✅ Click disparado en el link');
+
+    // Limpiar
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      console.log('🧹 Limpieza completada');
+    }, 100);
+
+    mostrarEstado(`💾 Archivo "${filename}" descargado`, 'success');
+    console.log('✅ Exportación completada exitosamente');
+
+  } catch (error) {
+    console.error('❌ Error en proceso de descarga:', error);
+    mostrarEstado('❌ Error al descargar: ' + error.message, 'error');
+    throw error;
+  }
+}
 
 // ============================================
 // INICIALIZACIÓN

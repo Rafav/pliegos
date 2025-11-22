@@ -1,39 +1,38 @@
 /**
- * CONTENT-SCRAPER.JS - Metabuscador de Pliegos v2.0
- * Content script que se inyecta en las páginas para extraer resultados
+ * CONTENT-SCRAPER.JS - Metabuscador de Pliegos v2.1
+ * Content script mejorado con scraping genérico y robusto
  */
 
 (function() {
   'use strict';
 
-  console.log('🔍 Content scraper iniciado en:', window.location.hostname);
+  console.log('Content scraper v2.1 iniciado en:', window.location.href);
 
-  // Detectar qué fuente es basándonos en el hostname
   const hostname = window.location.hostname;
-  let scraper;
-  let nombreFuente;
+  let nombreFuente, sourceId;
 
   if (hostname.includes('bnedigital.bne.es')) {
-    scraper = scrapearBNE;
     nombreFuente = 'BNE Digital';
+    sourceId = 'bne';
   } else if (hostname.includes('desenrollandoelcordel')) {
-    scraper = scrapearDesenrollando;
     nombreFuente = 'Desenrollando el cordel';
+    sourceId = 'cordel';
   } else if (hostname.includes('biblioteca.cchs.csic.es')) {
-    scraper = scrapearMapping;
     nombreFuente = 'Mapping Pliegos';
+    sourceId = 'mapping';
   } else if (hostname.includes('red-aracne')) {
-    scraper = scrapearAracne;
     nombreFuente = 'Red-aracne';
+    sourceId = 'aracne';
   } else if (hostname.includes('funjdiaz')) {
-    scraper = scrapearFunjdiaz;
     nombreFuente = 'Fundación Joaquín Díaz';
+    sourceId = 'funjdiaz';
   } else {
-    console.warn('⚠️ Fuente no reconocida:', hostname);
+    console.warn('Fuente no reconocida:', hostname);
     return;
   }
 
-  // Esperar a que la página cargue completamente
+  console.log('Fuente detectada:', nombreFuente);
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', iniciar);
   } else {
@@ -41,30 +40,45 @@
   }
 
   function iniciar() {
-    // Dar tiempo al JavaScript de la página para renderizar
+    // Desenrollando necesita más tiempo para renderizar Web Components
+    const delay = sourceId === 'cordel' ? 6000 : 3000;
+
+    console.log(`Esperando ${delay}ms para scraping...`);
+
     setTimeout(() => {
       try {
-        const resultados = scraper();
+        let resultados;
+
+        // Scrapers específicos para sitios problemáticos
+        if (sourceId === 'funjdiaz') {
+          resultados = scrapearJoaquinDiaz();
+        } else if (sourceId === 'cordel') {
+          resultados = scrapearDesenrollando();
+        } else {
+          resultados = scrapearGenerico();
+        }
+
+        console.log(resultados.length, 'resultados encontrados');
         enviarResultados(resultados);
       } catch (error) {
-        console.error('❌ Error en scraping:', error);
+        console.error('Error:', error);
         enviarError(error);
       }
-    }, 2000); // 2 segundos de espera
+    }, delay);
   }
 
   function enviarResultados(resultados) {
     chrome.runtime.sendMessage({
       action: 'scrapingCompleto',
       fuente: nombreFuente,
-      hostname: hostname,
+      sourceId: sourceId,
       resultados: resultados,
       timestamp: Date.now()
     }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('Error al enviar resultados:', chrome.runtime.lastError);
+        console.error('Error al enviar:', chrome.runtime.lastError);
       } else {
-        console.log(`✅ ${resultados.length} resultados enviados`);
+        console.log('Resultados enviados');
       }
     });
   }
@@ -73,269 +87,257 @@
     chrome.runtime.sendMessage({
       action: 'scrapingError',
       fuente: nombreFuente,
-      hostname: hostname,
+      sourceId: sourceId,
       error: error.message,
       timestamp: Date.now()
     });
   }
 
-  // ============================================
-  // SCRAPERS ESPECÍFICOS POR FUENTE
-  // ============================================
+  function scrapearGenerico() {
+    console.log('Iniciando scraping generico');
 
-  /**
-   * Scraper para BNE Digital
-   */
-  function scrapearBNE() {
-    const resultados = [];
-
-    // Intentar diferentes selectores (la estructura puede variar)
     const selectores = [
-      '.resultado',
-      '.item-resultado',
-      '.documento',
-      'article.resultado',
-      '.search-result'
+      '.item', '.result', '.resultado', '.search-result',
+      '.documento', 'article', '.card', '.entry',
+      'tr[class*="result"]', 'div[class*="result"]',
+      'li[class*="item"]', '[class*="resultado"]',
+      '[class*="result"]', '[class*="item"]'
     ];
 
     let items = [];
-    for (const selector of selectores) {
-      items = document.querySelectorAll(selector);
-      if (items.length > 0) break;
+    for (const sel of selectores) {
+      try {
+        const els = document.querySelectorAll(sel);
+        if (els.length > 0) {
+          const validos = Array.from(els).filter(el => el.textContent.trim().length > 20);
+          if (validos.length > 0) {
+            items = validos;
+            console.log('Selector funciono:', sel, '(', items.length, 'items)');
+            break;
+          }
+        }
+      } catch (e) {}
     }
 
     if (items.length === 0) {
-      console.warn('No se encontraron resultados con selectores conocidos');
-      return resultados;
+      console.warn('No se encontraron resultados');
+      return [];
     }
 
-    items.forEach((item, index) => {
+    const resultados = [];
+    items.forEach((item, i) => {
       try {
-        const resultado = {
-          id: `bne_${Date.now()}_${index}`,
-          titulo: extraerTexto(item, ['.titulo', 'h2', 'h3', '.title']),
-          autor: extraerTexto(item, ['.autor', '.author', '.creator']),
-          fecha: extraerTexto(item, ['.fecha', '.date', '.year']),
+        const r = {
+          id: sourceId + '_' + Date.now() + '_' + i,
+          titulo: extraer(item, ['h1', 'h2', 'h3', '.title', '.titulo', 'strong', 'a']),
+          autor: extraer(item, ['.author', '.autor', '[class*="author"]']),
+          fecha: extraer(item, ['.date', '.fecha', '.year']),
           url: extraerURL(item),
-          imagen: extraerImagen(item),
-          fuente: 'BNE Digital'
+          fuente: nombreFuente
         };
-
-        // Solo añadir si tiene título
-        if (resultado.titulo) {
-          resultados.push(resultado);
-        }
-      } catch (error) {
-        console.warn('Error procesando item BNE:', error);
-      }
+        if (r.titulo) resultados.push(r);
+      } catch (e) {}
     });
 
-    console.log(`📖 BNE: ${resultados.length} resultados extraídos`);
     return resultados;
   }
 
-  /**
-   * Scraper para Desenrollando el cordel
-   */
+  function extraer(el, sels) {
+    for (const s of sels) {
+      try {
+        const e = el.querySelector(s);
+        if (e && e.textContent.trim()) {
+          return e.textContent.trim().substring(0, 200);
+        }
+      } catch (e) {}
+    }
+    return '';
+  }
+
+  function extraerURL(el) {
+    try {
+      const a = el.querySelector('a[href]');
+      if (a) return new URL(a.href, window.location.href).href;
+    } catch (e) {}
+    return '';
+  }
+
+  function scrapearJoaquinDiaz() {
+    console.log('Scraping Joaquín Díaz con estrategia específica');
+
+    // Los resultados son links con patrón: pliegos-listado.php?id=XXXX&qry=...
+    const links = document.querySelectorAll('a[href*="pliegos-listado.php?id="]');
+    const resultados = [];
+
+    console.log('Enlaces encontrados:', links.length);
+
+    links.forEach((link, i) => {
+      try {
+        const href = link.href;
+        const texto = link.textContent.trim();
+
+        // Extraer el ID del pliego
+        const match = href.match(/id=(\d+)/);
+        const id = match ? match[1] : i;
+
+        if (texto && texto.length > 3) {
+          resultados.push({
+            id: 'funjdiaz_' + Date.now() + '_' + id,
+            titulo: texto.substring(0, 200),
+            url: href,
+            fuente: nombreFuente
+          });
+        }
+      } catch (e) {
+        console.warn('Error procesando link:', e);
+      }
+    });
+
+    console.log('Joaquín Díaz - resultados procesados:', resultados.length);
+    return resultados;
+  }
+
   function scrapearDesenrollando() {
+    console.log('Scraping Desenrollando con estrategia específica (Shadow DOM)');
+    console.log('URL actual:', window.location.href);
+
     const resultados = [];
 
-    const selectores = [
-      '.search-result',
-      '.result-item',
-      '.cordel-item',
-      'article'
-    ];
+    // Log de elementos en la página
+    console.log('Elementos pb-* encontrados:', document.querySelectorAll('[class*="pb-"], [id*="pb-"]').length);
+    console.log('Elementos <pb-page>:', document.querySelectorAll('pb-page').length);
+    console.log('Elementos <pb-results>:', document.querySelectorAll('pb-results').length);
+    console.log('Elementos <pb-load>:', document.querySelectorAll('pb-load').length);
 
-    let items = [];
-    for (const selector of selectores) {
-      items = document.querySelectorAll(selector);
-      if (items.length > 0) break;
-    }
+    // Estrategia 1: Intentar acceder al Shadow DOM de pb-page
+    try {
+      const pbPage = document.querySelector('pb-page');
+      console.log('pb-page encontrado:', !!pbPage);
+      if (pbPage) {
+        console.log('pb-page tiene shadowRoot:', !!pbPage.shadowRoot);
+        if (pbPage.shadowRoot) {
+          const shadowLinks = pbPage.shadowRoot.querySelectorAll('a[href]');
+          console.log('Links en pb-page shadowRoot:', shadowLinks.length);
 
-    items.forEach((item, index) => {
-      try {
-        const resultado = {
-          id: `cordel_${Date.now()}_${index}`,
-          titulo: extraerTexto(item, ['.title', 'h2', 'h3', '.titulo']),
-          autor: extraerTexto(item, ['.author', '.autor', '.creator']),
-          fecha: extraerTexto(item, ['.date', '.fecha', '.year']),
-          url: extraerURL(item),
-          imagen: extraerImagen(item),
-          fuente: 'Desenrollando el cordel'
-        };
-
-        if (resultado.titulo) {
-          resultados.push(resultado);
+          shadowLinks.forEach((link, i) => {
+            const texto = link.textContent.trim();
+            if (texto && texto.length > 10) {
+              resultados.push({
+                id: 'cordel_' + Date.now() + '_' + i,
+                titulo: texto.substring(0, 200),
+                url: link.href,
+                fuente: nombreFuente
+              });
+            }
+          });
         }
-      } catch (error) {
-        console.warn('Error procesando item Desenrollando:', error);
       }
-    });
+    } catch (e) {
+      console.error('Error accediendo a Shadow DOM pb-page:', e);
+    }
 
-    console.log(`📜 Desenrollando: ${resultados.length} resultados`);
-    return resultados;
-  }
-
-  /**
-   * Scraper para Mapping Pliegos (CSIC)
-   */
-  function scrapearMapping() {
-    const resultados = [];
-
-    // Mapping Pliegos probablemente usa tabla
-    const filas = document.querySelectorAll('table tr, .resultado, .item');
-
-    filas.forEach((fila, index) => {
-      if (index === 0 && fila.querySelector('th')) return; // Skip header
-
+    // Estrategia 2: Buscar pb-results o pb-load
+    if (resultados.length === 0) {
       try {
-        const celdas = fila.querySelectorAll('td');
+        const selectors = ['pb-results', 'pb-load', 'pb-view', 'pb-document'];
+        for (const sel of selectors) {
+          const el = document.querySelector(sel);
+          if (el && el.shadowRoot) {
+            console.log(`Shadow DOM encontrado en ${sel}`);
+            const shadowLinks = el.shadowRoot.querySelectorAll('a[href]');
+            console.log(`Links en ${sel}:`, shadowLinks.length);
 
-        const resultado = {
-          id: `mapping_${Date.now()}_${index}`,
-          titulo: celdas.length > 0 ? celdas[0]?.textContent.trim() : extraerTexto(fila, ['.titulo', 'h2', 'h3']),
-          autor: celdas.length > 1 ? celdas[1]?.textContent.trim() : extraerTexto(fila, ['.autor', '.author']),
-          fecha: celdas.length > 2 ? celdas[2]?.textContent.trim() : extraerTexto(fila, ['.fecha', '.date']),
-          impresor: celdas.length > 3 ? celdas[3]?.textContent.trim() : '',
-          url: extraerURL(fila),
-          fuente: 'Mapping Pliegos'
-        };
+            shadowLinks.forEach((link, i) => {
+              const texto = link.textContent.trim();
+              if (texto && texto.length > 10) {
+                resultados.push({
+                  id: 'cordel_' + Date.now() + '_' + i,
+                  titulo: texto.substring(0, 200),
+                  url: link.href,
+                  fuente: nombreFuente
+                });
+              }
+            });
 
-        if (resultado.titulo) {
-          resultados.push(resultado);
+            if (resultados.length > 0) break;
+          }
         }
-      } catch (error) {
-        console.warn('Error procesando item Mapping:', error);
+      } catch (e) {
+        console.error('Error en estrategia 2:', e);
       }
-    });
-
-    console.log(`🗺️ Mapping: ${resultados.length} resultados`);
-    return resultados;
-  }
-
-  /**
-   * Scraper para Red-aracne
-   */
-  function scrapearAracne() {
-    const resultados = [];
-
-    const selectores = [
-      '.registro',
-      '.resultado',
-      '.result-item',
-      'article'
-    ];
-
-    let items = [];
-    for (const selector of selectores) {
-      items = document.querySelectorAll(selector);
-      if (items.length > 0) break;
     }
 
-    items.forEach((item, index) => {
+    // Estrategia 3: Buscar cualquier Web Component con Shadow DOM
+    if (resultados.length === 0) {
       try {
-        const resultado = {
-          id: `aracne_${Date.now()}_${index}`,
-          titulo: extraerTexto(item, ['h3', 'h2', '.titulo', '.title']),
-          autor: extraerTexto(item, ['.autor', '.author']),
-          descripcion: extraerTexto(item, ['.descripcion', '.description', 'p']),
-          url: extraerURL(item),
-          fuente: 'Red-aracne'
-        };
+        const allElements = document.querySelectorAll('*');
+        console.log('Total de elementos en página:', allElements.length);
 
-        if (resultado.titulo) {
-          resultados.push(resultado);
+        let elementosConShadow = 0;
+        for (const el of allElements) {
+          if (el.shadowRoot) {
+            elementosConShadow++;
+            console.log(`Shadow DOM #${elementosConShadow} en:`, el.tagName, el.className || '');
+            const links = el.shadowRoot.querySelectorAll('a[href]');
+            if (links.length > 0) {
+              console.log(`  → ${links.length} links encontrados`);
+              links.forEach((link, i) => {
+                const texto = link.textContent.trim();
+                if (texto && texto.length > 10) {
+                  resultados.push({
+                    id: 'cordel_' + Date.now() + '_' + i,
+                    titulo: texto.substring(0, 200),
+                    url: link.href,
+                    fuente: nombreFuente
+                  });
+                }
+              });
+              break; // Encontramos resultados, salir
+            }
+          }
         }
-      } catch (error) {
-        console.warn('Error procesando item Aracne:', error);
+        console.log('Total de elementos con shadowRoot:', elementosConShadow);
+      } catch (e) {
+        console.error('Error en estrategia 3:', e);
       }
-    });
+    }
 
-    console.log(`🕸️ Aracne: ${resultados.length} resultados`);
+    // Estrategia 4: Buscar links en DOM normal (sin shadow)
+    if (resultados.length === 0) {
+      console.log('Buscando links en DOM normal...');
+      const links = document.querySelectorAll('a[href]');
+      console.log('Total de links en DOM normal:', links.length);
+
+      // Filtrar links que parezcan resultados
+      const linksValidos = Array.from(links).filter(link => {
+        const href = link.href;
+        const texto = link.textContent.trim();
+        // Links de Desenrollando tienen este patrón
+        return (href.includes('desenrollandoelcordel.unige.ch') &&
+                texto.length > 10 &&
+                !href.includes('search.html'));
+      });
+
+      console.log('Links válidos encontrados:', linksValidos.length);
+
+      linksValidos.forEach((link, i) => {
+        resultados.push({
+          id: 'cordel_' + Date.now() + '_' + i,
+          titulo: link.textContent.trim().substring(0, 200),
+          url: link.href,
+          fuente: nombreFuente
+        });
+      });
+    }
+
+    // Estrategia 5: Fallback - scraping genérico
+    if (resultados.length === 0) {
+      console.log('Intentando scraping genérico como último recurso...');
+      return scrapearGenerico();
+    }
+
+    console.log('Desenrollando - resultados procesados:', resultados.length);
     return resultados;
-  }
-
-  /**
-   * Scraper para Fundación Joaquín Díaz
-   */
-  function scrapearFunjdiaz() {
-    const resultados = [];
-
-    const selectores = [
-      '.pliego-item',
-      '.item',
-      '.resultado',
-      'article',
-      'tr'
-    ];
-
-    let items = [];
-    for (const selector of selectores) {
-      items = document.querySelectorAll(selector);
-      if (items.length > 0) break;
-    }
-
-    items.forEach((item, index) => {
-      try {
-        const resultado = {
-          id: `funjdiaz_${Date.now()}_${index}`,
-          titulo: extraerTexto(item, ['.titulo', 'h2', 'h3', '.title']),
-          descripcion: extraerTexto(item, ['.descripcion', 'p', '.description']),
-          url: extraerURL(item),
-          imagen: extraerImagen(item),
-          fuente: 'Fundación Joaquín Díaz'
-        };
-
-        if (resultado.titulo) {
-          resultados.push(resultado);
-        }
-      } catch (error) {
-        console.warn('Error procesando item Funjdiaz:', error);
-      }
-    });
-
-    console.log(`🎵 Funjdiaz: ${resultados.length} resultados`);
-    return resultados;
-  }
-
-  // ============================================
-  // UTILIDADES DE SCRAPING
-  // ============================================
-
-  /**
-   * Extraer texto del primer selector que funcione
-   */
-  function extraerTexto(elemento, selectores) {
-    for (const selector of selectores) {
-      const el = elemento.querySelector(selector);
-      if (el && el.textContent.trim()) {
-        return el.textContent.trim();
-      }
-    }
-    return '';
-  }
-
-  /**
-   * Extraer URL del primer enlace
-   */
-  function extraerURL(elemento) {
-    const enlace = elemento.querySelector('a');
-    if (enlace && enlace.href) {
-      return enlace.href;
-    }
-    return '';
-  }
-
-  /**
-   * Extraer imagen
-   */
-  function extraerImagen(elemento) {
-    const img = elemento.querySelector('img');
-    if (img && img.src) {
-      return img.src;
-    }
-    return '';
   }
 
 })();
