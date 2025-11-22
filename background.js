@@ -339,22 +339,19 @@ async function descargarResultadosTXT(scraping) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     const filename = `pliegos-${querySanitizada}-${timestamp}.txt`;
 
-    // Crear blob y generar URL
-    const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+    // Crear Data URL (funciona en service workers, a diferencia de blob URL)
+    const dataUrl = 'data:text/plain;charset=utf-8,' + encodeURIComponent(contenido);
 
     // Descargar usando Chrome Downloads API
     chrome.downloads.download({
-      url: url,
+      url: dataUrl,
       filename: filename,
       saveAs: false  // Descargar automáticamente sin preguntar
     }, (downloadId) => {
       if (chrome.runtime.lastError) {
-        console.error('Error descargando:', chrome.runtime.lastError);
+        console.error('❌ Error descargando:', chrome.runtime.lastError);
       } else {
         console.log('✅ Archivo descargado:', filename, 'ID:', downloadId);
-        // Limpiar el blob URL después de un momento
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
       }
     });
 

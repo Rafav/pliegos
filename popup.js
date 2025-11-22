@@ -501,6 +501,11 @@ async function restaurarEstado() {
       sourceCheckboxes.forEach(cb => {
         cb.checked = data.selectedSources.includes(cb.value);
       });
+    } else {
+      // Si no hay datos guardados, marcar TODAS las fuentes por defecto
+      sourceCheckboxes.forEach(cb => {
+        cb.checked = true;
+      });
     }
 
     // Restaurar modo de apertura
