@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "Metabuscador de Pliegos",
+  "version": "2.0.0",
+  "description": "Búsqueda simultánea en múltiples bases de datos de literatura popular española con paginación y scraping (5 fuentes integradas)",
+
+  "permissions": [
+    "tabs",
+    "storage",
+    "scripting",
+    "notifications"
+  ],
+  
+  "host_permissions": [
+    "https://bnedigital.bne.es/*",
+    "https://desenrollandoelcordel.unige.ch/*",
+    "https://biblioteca.cchs.csic.es/*",
+    "https://www.red-aracne.es/*",
+    "https://funjdiaz.net/*"
+  ],
+  
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  
+  "background": {
+    "service_worker": "background.js"
+  },
+  
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+P",
+        "mac": "Command+Shift+P"
+      },
+      "description": "Abrir metabuscador"
+    }
+  }
+}

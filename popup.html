@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>📚 Metabuscador de Pliegos</h1>
+      <p class="subtitle">Literatura popular española</p>
+    </header>
+
+    <main>
+      <!-- Campo de búsqueda -->
+      <div class="search-box">
+        <input
+          type="text"
+          id="query"
+          placeholder="romances, autor, lugar..."
+          autofocus>
+        <button id="searchBtn">🔍 Buscar</button>
+      </div>
+
+      <!-- Opciones de búsqueda -->
+      <div class="options">
+        <h4>Opciones de búsqueda:</h4>
+
+        <!-- Modo de apertura -->
+        <div class="option-group">
+          <label class="option-label">
+            <input type="radio" name="mode" value="tabs" checked>
+            <span>Pestañas nuevas (ventana actual)</span>
+          </label>
+          <label class="option-label">
+            <input type="radio" name="mode" value="window">
+            <span>Ventana nueva</span>
+          </label>
+        </div>
+
+        <!-- Control de paginación -->
+        <div class="option-group pagination-control">
+          <label class="option-label-full">
+            <input type="checkbox" id="enablePagination">
+            <span>📄 Obtener múltiples páginas de resultados</span>
+          </label>
+
+          <div id="paginationSettings" class="pagination-settings" style="display: none;">
+            <label class="pages-label">
+              Páginas por fuente:
+              <select id="pagesPerSource">
+                <option value="1">1 página</option>
+                <option value="2" selected>2 páginas</option>
+                <option value="3">3 páginas</option>
+                <option value="5">5 páginas</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <!-- Modo con scraping -->
+        <div class="option-group">
+          <label class="option-label-full">
+            <input type="checkbox" id="enableScraping">
+            <span>🔍 Mostrar resumen unificado de resultados</span>
+          </label>
+          <p class="option-hint">Extrae y muestra todos los resultados en un resumen</p>
+        </div>
+      </div>
+
+      <!-- Selección de fuentes -->
+      <div class="sources">
+        <h3>Fuentes a consultar:</h3>
+        
+        <label class="source-item">
+          <input type="checkbox" value="bne" checked>
+          <span class="source-name" style="color: #722ed1;">📖 BNE Digital</span>
+        </label>
+
+        <label class="source-item">
+          <input type="checkbox" value="cordel" checked>
+          <span class="source-name" style="color: #e85d75;">📜 Desenrollando el cordel</span>
+        </label>
+
+        <label class="source-item">
+          <input type="checkbox" value="mapping" checked>
+          <span class="source-name" style="color: #52c41a;">🗺️ Mapping Pliegos (CSIC)</span>
+        </label>
+
+        <label class="source-item">
+          <input type="checkbox" value="aracne" checked>
+          <span class="source-name" style="color: #4a90e2;">🕸️ Red-aracne (BIDISO)</span>
+        </label>
+
+        <label class="source-item">
+          <input type="checkbox" value="funjdiaz">
+          <span class="source-name" style="color: #faad14;">🎵 Fundación Joaquín Díaz</span>
+        </label>
+      </div>
+
+      <!-- Controles rápidos -->
+      <div class="quick-controls">
+        <button class="btn-secondary" id="selectAll">✓ Todas</button>
+        <button class="btn-secondary" id="selectNone">✗ Ninguna</button>
+      </div>
+
+      <!-- Búsquedas rápidas -->
+      <div class="quick-searches">
+        <h4>⚡ Búsquedas rápidas:</h4>
+        <div class="quick-btns">
+          <button class="quick-btn" data-query="romances">romances</button>
+          <button class="quick-btn" data-query="cautivos">cautivos</button>
+          <button class="quick-btn" data-query="Barcelona">Barcelona</button>
+          <button class="quick-btn" data-query="monja">monja</button>
+          <button class="quick-btn" data-query="Diego Corrientes">Diego Corrientes</button>
+          <button class="quick-btn" data-query="muerte">muerte</button>
+        </div>
+      </div>
+
+      <!-- Estado -->
+      <div id="status" class="status"></div>
+
+      <!-- Resumen de resultados (scraping) -->
+      <div id="resumenResultados" class="resumen-resultados" style="display: none;">
+        <h3>📊 Resumen de resultados</h3>
+        <div id="resumenContenido"></div>
+        <button id="cerrarResumen" class="btn-secondary">Cerrar resumen</button>
+      </div>
+    </main>
+
+    <footer>
+      <p>💡 <strong>Atajo:</strong> Ctrl+Shift+P (Cmd+Shift+P en Mac)</p>
+      <p>✨ Versión 2.0 - Con paginación y scraping</p>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
