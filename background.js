@@ -163,12 +163,26 @@ function inyectarScraperCuandoCargue(tabId) {
         files: ['content-scraper.js']
       }).then(() => {
         console.log(`✅ Script inyectado en tab ${tabId}`);
-      }).catch(error => {
+      }).catch(async (error) => {
         console.error(`❌ Error inyectando script en tab ${tabId}:`, error);
+
+        // Intentar obtener info de la tab
+        let fuente = 'Desconocida';
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          const url = new URL(tab.url);
+          fuente = url.hostname || 'Desconocida';
+        } catch (e) {
+          // Ignorar si la tab fue cerrada
+        }
+
         scrapingState.errores.push({
           tabId: tabId,
-          error: error.message
+          fuente: fuente,
+          error: `Error al inyectar script: ${error.message}`
         });
+        scrapingState.completadas++;
+        actualizarBadge();
         verificarSiTermino();
       });
 
@@ -178,13 +192,30 @@ function inyectarScraperCuandoCargue(tabId) {
   });
 
   // Timeout: si no carga en 30s, marcar como error
-  setTimeout(() => {
-    if (scrapingState.activo && !scrapingState.resultados.find(r => r.tabId === tabId)) {
-      console.warn(`⏱️ Timeout: Tab ${tabId} no respondió en 30s`);
+  setTimeout(async () => {
+    // Verificar si la tab ya respondió
+    const yaRespondio = scrapingState.resultados.find(r => r.tabId === tabId) ||
+                        scrapingState.errores.find(e => e.tabId === tabId);
+
+    if (scrapingState.activo && !yaRespondio) {
+      // Intentar obtener info de la tab
+      let fuente = 'Desconocida';
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        const url = new URL(tab.url);
+        fuente = url.hostname || 'Desconocida';
+      } catch (e) {
+        // Tab puede haber sido cerrada
+      }
+
+      console.warn(`⏱️ Timeout: Tab ${tabId} (${fuente}) no respondió en 30s`);
       scrapingState.errores.push({
         tabId: tabId,
-        error: 'Timeout al cargar página'
+        fuente: fuente,
+        error: 'Timeout al cargar página (30s)'
       });
+      scrapingState.completadas++;  // ← CRÍTICO: incrementar completadas
+      actualizarBadge();
       verificarSiTermino();
     }
   }, 30000);
